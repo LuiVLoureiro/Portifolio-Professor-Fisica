@@ -1,7 +1,23 @@
-import { useRef, useMemo, useEffect, useState } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Suspense, useRef, useMemo, useEffect, useState } from 'react'
+import { Canvas, useFrame, useLoader } from '@react-three/fiber'
 import { Points, PointMaterial, Html } from '@react-three/drei'
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import * as THREE from 'three'
+import RocketFire from './RocketFire'
+
+// Paleta de cores do foguete OBJ — mesma do Hero
+const ROCKET_PALETTE = {
+  aiStandardSurface1SG: { color: '#5a6898', metalness: 0.65, roughness: 0.35 },
+  aiStandardSurface2SG: { color: '#f97316', metalness: 0.20, roughness: 0.55 },
+  aiStandardSurface3SG: { color: '#e8eaf5', metalness: 0.30, roughness: 0.40 },
+  aiStandardSurface4SG: { color: '#10204a', metalness: 0.55, roughness: 0.40 },
+  aiStandardSurface5SG: { color: '#22d3ee', metalness: 0.15, roughness: 0.25, emissive: '#0a3040', emissiveIntensity: 0.6 },
+  aiStandardSurface6SG: { color: '#a8b8d0', metalness: 0.70, roughness: 0.25 },
+  aiStandardSurface7SG: { color: '#dc2626', metalness: 0.25, roughness: 0.55 },
+  aiStandardSurface8SG: { color: '#f0f4ff', metalness: 0.85, roughness: 0.10 },
+  aiStandardSurface9SG: { color: '#0a0c18', metalness: 0.75, roughness: 0.40 },
+  initialShadingGroup:  { color: '#808898', metalness: 0.45, roughness: 0.50 },
+}
 
 function useReveal(threshold = 0.15, delay = 0) {
   const ref = useRef()
@@ -146,55 +162,6 @@ function OrbitalParticles({ radius, count, color, tilt, speed }) {
   )
 }
 
-// Foguete em órbita ao redor do planeta
-function Rocket() {
-  const ref = useRef()
-  useFrame(({ clock }) => {
-    if (!ref.current) return
-    const t  = clock.getElapsedTime() * 0.22
-    const r  = 4.2
-    ref.current.position.set(
-      Math.cos(t) * r,
-      Math.sin(t * 0.4) * 0.9,
-      Math.sin(t) * r
-    )
-    // Orientar na tangente da órbita
-    const tangentX = -Math.sin(t)
-    const tangentZ =  Math.cos(t)
-    ref.current.rotation.y = Math.atan2(tangentX, tangentZ)
-    ref.current.rotation.z = Math.PI / 2
-  })
-
-  return (
-    <group ref={ref} scale={0.18}>
-      {/* Corpo */}
-      <mesh>
-        <cylinderGeometry args={[1, 1.1, 3.5, 8]} />
-        <meshBasicMaterial color="#e8e8ff" />
-      </mesh>
-      {/* Cone frontal */}
-      <mesh position={[0, 2.5, 0]}>
-        <coneGeometry args={[1, 1.8, 8]} />
-        <meshBasicMaterial color="#f97316" />
-      </mesh>
-      {/* Aletas */}
-      <mesh position={[0, -2, 0]} rotation={[0, Math.PI / 4, 0]}>
-        <coneGeometry args={[1.8, 1.2, 4]} />
-        <meshBasicMaterial color="#6c63ff" transparent opacity={0.8} />
-      </mesh>
-      {/* Exaustão */}
-      <mesh position={[0, -3.2, 0]}>
-        <coneGeometry args={[0.8, 2, 8]} />
-        <meshBasicMaterial color="#f97316" transparent opacity={0.55} />
-      </mesh>
-      {/* Brilho da exaustão */}
-      <mesh position={[0, -4, 0]}>
-        <coneGeometry args={[0.5, 1.5, 8]} />
-        <meshBasicMaterial color="#fbbf24" transparent opacity={0.3} />
-      </mesh>
-    </group>
-  )
-}
 
 // Fórmulas matemáticas flutuando — Html do drei sobrepõe HTML em posições 3D
 const formulas = [
@@ -233,9 +200,102 @@ function MathLabels() {
   )
 }
 
-function PlanetScene() {
+// Foguete OBJ em órbita real — mesmo canvas do planeta, depth testing automático
+function OrbitingRocket({ scrollRef }) {
+  const orbitRef = useRef()
+  const matsRef  = useRef([])
+  const obj = useLoader(OBJLoader, '/foguete/foguete.obj')
+
+  const { model, offset } = useMemo(() => {
+    const cloned = obj.clone(true)
+
+    cloned.traverse((child) => {
+      if (child.name === 'pPlane1') child.visible = false
+    })
+
+    const box = new THREE.Box3()
+    cloned.traverse((child) => {
+      if (child.isMesh && child.visible) box.expandByObject(child)
+    })
+    const size = box.getSize(new THREE.Vector3())
+    cloned.scale.setScalar(1 / Math.max(size.x, size.y, size.z))
+
+    const center = box.getCenter(new THREE.Vector3())
+      .multiplyScalar(1 / Math.max(size.x, size.y, size.z))
+
+    const matCache = {}
+    const allMats  = []
+    cloned.traverse((child) => {
+      if (!child.isMesh || !child.visible) return
+      const name = child.material?.name ?? 'initialShadingGroup'
+      if (!matCache[name]) {
+        const def = ROCKET_PALETTE[name] ?? ROCKET_PALETTE.initialShadingGroup
+        matCache[name] = new THREE.MeshStandardMaterial({
+          color: def.color, metalness: def.metalness ?? 0.5,
+          roughness: def.roughness ?? 0.4,
+          emissive: def.emissive ?? '#000000',
+          emissiveIntensity: def.emissiveIntensity ?? 0,
+          transparent: true, opacity: 0,
+        })
+        allMats.push(matCache[name])
+      }
+      child.material = matCache[name]
+    })
+    matsRef.current = allMats
+
+    return { model: cloned, offset: center }
+  }, [obj])
+
+  useFrame(({ clock }) => {
+    if (!orbitRef.current) return
+    const t = scrollRef.current
+
+    // Fade-in ao entrar na seção About (t: 0.85 → 1.1)
+    const scrollOpacity = Math.max(0, Math.min(1, (t - 0.85) / 0.25))
+    if (scrollOpacity === 0) {
+      matsRef.current.forEach(m => { m.opacity = 0 })
+      return
+    }
+
+    const ot = clock.getElapsedTime() * 0.22
+    const r  = 4.2
+
+    const px = Math.cos(ot) * r
+    const py = Math.sin(ot * 0.4) * 0.9
+    const pz = Math.sin(ot) * r
+
+    orbitRef.current.position.set(px, py, pz)
+    orbitRef.current.rotation.y = Math.atan2(-Math.sin(ot), Math.cos(ot))
+    orbitRef.current.rotation.z = Math.PI / 2
+    orbitRef.current.rotation.x = 0
+
+    // ── Oclusão pelo planeta ──────────────────────────────────────────────
+    // A câmera está em z=9 olhando para z=0 (origem = centro do planeta).
+    // Quando pz > 0 o foguete está entre a câmera e o planeta → visível.
+    // Quando pz < 0 o foguete está no lado oposto → atrás do planeta.
+    // Transição suave de pz=0 (lateral) até pz=-PLANET_R (totalmente atrás).
+    const PLANET_R = 2.4
+    const behind = Math.max(0, Math.min(1, -pz / PLANET_R))
+    matsRef.current.forEach(m => { m.opacity = scrollOpacity * (1 - behind) })
+  })
+
+  return (
+    <group ref={orbitRef} scale={0.42}>
+      <primitive object={model} position={[-offset.x, -offset.y, -offset.z]} />
+      {/* tailY=-0.5 = metade inferior do foguete normalizado em 1u (pre-scale) */}
+      <RocketFire tailY={-0.5} scale={0.45} count={160} scrollRef={scrollRef} />
+    </group>
+  )
+}
+
+function PlanetScene({ scrollRef }) {
   return (
     <>
+      {/* Luzes para o MeshStandardMaterial do foguete */}
+      <ambientLight intensity={0.5} color="#dde8ff" />
+      <pointLight position={[6, 6, 6]}   intensity={60} color="#c8d8ff" />
+      <pointLight position={[-5, -3, -5]} intensity={20} color="#a78bfa" />
+
       <BackgroundStars />
       <MathPlanet />
       <OrbitalRing radius={3.2} tilt={0.3} speed={0.20} color="#6c63ff" opacity={0.35} />
@@ -244,8 +304,10 @@ function PlanetScene() {
       <OrbitalParticles radius={3.2} count={60}  color="#6c63ff" tilt={0.3}  speed={0.20} />
       <OrbitalParticles radius={3.8} count={40}  color="#22d3ee" tilt={1.1}  speed={-0.14} />
       <OrbitalParticles radius={4.5} count={28}  color="#a78bfa" tilt={1.8}  speed={0.09} />
-      <Rocket />
       <MathLabels />
+      <Suspense fallback={null}>
+        <OrbitingRocket scrollRef={scrollRef} />
+      </Suspense>
     </>
   )
 }
@@ -324,7 +386,7 @@ function LogItem({ item, last, index = 0 }) {
   )
 }
 
-export default function About() {
+export default function About({ scrollRef }) {
   const [refHeading, styleHeading] = useReveal(0.2, 0)
   const [refQuote, styleQuote]     = useReveal(0.2, 0)
   const [refStats, styleStats]     = useReveal(0.2, 100)
@@ -339,7 +401,7 @@ export default function About() {
       {/* ── Canvas Three.js — Planeta da Matemática ─────────────────────── */}
       <div className="relative w-full h-[65vh] min-h-[480px]">
         <Canvas camera={{ position: [0, 1.5, 9], fov: 52 }}>
-          <PlanetScene />
+          <PlanetScene scrollRef={scrollRef} />
         </Canvas>
 
         {/* Fade inferior — funde com o conteúdo abaixo */}
