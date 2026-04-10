@@ -37,7 +37,7 @@ function createFireTexture() {
  * @param {object}   scrollRef  Ref de scroll (scrollY/innerHeight). Quando fornecido,
  *                              o fogo faz fade-in de t=0.85 a t=1.1. Sem ele = sempre visível.
  */
-export default function RocketFire({ tailY = -1.75, scale = 1, count = 260, scrollRef = null }) {
+export default function RocketFire({ tailY = -1.75, scale = 1, count = 260, scrollRef = null, opacityRef = null }) {
   const coreRef  = useRef()   // partículas internas — quentes e pequenas
   const outerRef = useRef()   // halo externo — grandes e lentas
 
@@ -81,9 +81,11 @@ export default function RocketFire({ tailY = -1.75, scale = 1, count = 260, scro
     const dt = Math.min(delta, 0.05)
 
     // ── Fade-in pelo scroll (aparece ao entrar no About) ──────────────────
-    const scrollOpacity = scrollRef
-      ? Math.max(0, Math.min(1, (scrollRef.current - 0.85) / 0.25))
-      : 1
+    const scrollOpacity = opacityRef
+      ? opacityRef.current
+      : scrollRef
+        ? Math.max(0, Math.min(1, (scrollRef.current - 0.85) / 0.25))
+        : 1
 
     if (coreRef.current?.material)  coreRef.current.material.opacity  = 0.95 * scrollOpacity
     if (outerRef.current?.material) outerRef.current.material.opacity = 0.65 * scrollOpacity

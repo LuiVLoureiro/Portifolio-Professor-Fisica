@@ -1,14 +1,10 @@
 import { Suspense, useRef, useMemo, useState, useEffect } from 'react'
-import { Canvas, useFrame, useLoader } from '@react-three/fiber'
+import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import * as THREE from 'three'
 import RocketFire from './RocketFire'
 
 // ── Utility ──────────────────────────────────────────────────────────────────
-
-function remap(v, a, b, c, d) {
-  return c + (d - c) * Math.max(0, Math.min(1, (v - a) / (b - a)))
-}
 
 function lerp(a, b, t) {
   return a + (b - a) * t
@@ -70,7 +66,7 @@ function WarpField() {
       <bufferGeometry>
         <bufferAttribute attach="attributes-position" args={[positions, 3]} />
       </bufferGeometry>
-      <pointsMaterial color="#dde8ff" size={0.05} sizeAttenuation transparent opacity={0.9} depthWrite={false} />
+      <pointsMaterial color="#E0F2FE" size={0.05} sizeAttenuation transparent opacity={0.8} depthWrite={false} />
     </points>
   )
 }
@@ -112,7 +108,7 @@ function ExhaustField() {
       <bufferGeometry>
         <bufferAttribute attach="attributes-position" args={[positions, 3]} />
       </bufferGeometry>
-      <pointsMaterial color="#f97316" size={0.07} sizeAttenuation transparent opacity={0.6} depthWrite={false} />
+      <pointsMaterial color="#38BDF8" size={0.07} sizeAttenuation transparent opacity={0.5} depthWrite={false} />
     </points>
   )
 }
@@ -138,26 +134,26 @@ function BackgroundScene() {
 //   9SG (5×)  exaustão/preto         |  8SG/5SG   detalhes cromados/ciano
 //
 const ROCKET_PALETTE = {
-  // Corpo branco principal (27×) — pérola brilhante com tom azul frio
-  aiStandardSurface3SG: { color: '#d8e8ff', metalness: 0.50, roughness: 0.28 },
-  // Painéis prateados (24×) — prata polida de alta refletividade
-  aiStandardSurface6SG: { color: '#b0c8e8', metalness: 0.88, roughness: 0.14 },
-  // Estrutura azul-escuro (24×) — azul marinho profundo
-  aiStandardSurface4SG: { color: '#0a1a48', metalness: 0.65, roughness: 0.32 },
-  // Secundário azul-índigo (22×) — índigo vibrante
-  aiStandardSurface1SG: { color: '#3858d0', metalness: 0.72, roughness: 0.28 },
-  // Acentos laranja (8×) — laranja quente com glow suave
-  aiStandardSurface2SG: { color: '#ff8820', metalness: 0.12, roughness: 0.42, emissive: '#7a3500', emissiveIntensity: 0.5 },
-  // Detalhes ciano (5×) — ciano elétrico com forte emissive
-  aiStandardSurface5SG: { color: '#00e5ff', metalness: 0.10, roughness: 0.18, emissive: '#004860', emissiveIntensity: 1.0 },
-  // Motor/vermelho (7×) — vermelho vivo com glow de calor
-  aiStandardSurface7SG: { color: '#ff2828', metalness: 0.18, roughness: 0.42, emissive: '#6a0000', emissiveIntensity: 0.6 },
-  // Detalhes cromados (5×) — cromo quase branco, muito metálico
-  aiStandardSurface8SG: { color: '#ecf4ff', metalness: 0.95, roughness: 0.05 },
-  // Exaustão/preto (5×) — preto com reflexo azul profundo
-  aiStandardSurface9SG: { color: '#05080f', metalness: 0.82, roughness: 0.30 },
-  // Fallback
-  initialShadingGroup:  { color: '#6878a8', metalness: 0.52, roughness: 0.45 },
+  // Corpo principal (27×) — Star White pérola fria
+  aiStandardSurface3SG: { color: '#F8FAFC', metalness: 0.45, roughness: 0.30 },
+  // Painéis (24×) — sky-100 metálico polido
+  aiStandardSurface6SG: { color: '#BAE6FD', metalness: 0.88, roughness: 0.12 },
+  // Estrutura escura (24×) — azul marinho profundo
+  aiStandardSurface4SG: { color: '#082030', metalness: 0.70, roughness: 0.30 },
+  // Secundário (22×) — sky-600
+  aiStandardSurface1SG: { color: '#0284C7', metalness: 0.70, roughness: 0.25 },
+  // Acentos (8×) — sky-400 com glow
+  aiStandardSurface2SG: { color: '#38BDF8', metalness: 0.15, roughness: 0.38, emissive: '#0EA5E9', emissiveIntensity: 0.45 },
+  // Detalhes brilhantes (5×) — sky-200 emissive forte
+  aiStandardSurface5SG: { color: '#BAE6FD', metalness: 0.10, roughness: 0.15, emissive: '#38BDF8', emissiveIntensity: 0.85 },
+  // Motor/propulsor (7×) — sky-500 com glow frio
+  aiStandardSurface7SG: { color: '#0EA5E9', metalness: 0.20, roughness: 0.38, emissive: '#0369A1', emissiveIntensity: 0.55 },
+  // Cromo (5×) — Star White quase espelho
+  aiStandardSurface8SG: { color: '#F8FAFC', metalness: 0.95, roughness: 0.04 },
+  // Exaustão/preto (5×) — azul abissal
+  aiStandardSurface9SG: { color: '#020C18', metalness: 0.80, roughness: 0.28 },
+  // Fallback — Lunar Dust
+  initialShadingGroup:  { color: '#94A3B8', metalness: 0.50, roughness: 0.45 },
 }
 
 // ── Modelo 3D do foguete ──────────────────────────────────────────────────────
@@ -171,10 +167,13 @@ const ROCKET_PALETTE = {
 //  t = 2.10 → foguete some — a jornada começou
 //
 function RocketModel({ scrollRef }) {
-  const groupRef   = useRef()
-  const matsRef    = useRef([])
-  const smoothTRef = useRef(0)
-  const launchRef  = useRef({ triggered: false, startTime: 0 })
+  const groupRef        = useRef()
+  const matsRef         = useRef([])
+  const smoothTRef      = useRef(0)
+  const launchRef       = useRef({ triggered: false, startTime: 0 })
+  const fireOpacityRef  = useRef(1)
+  const { viewport }    = useThree()
+  const rf              = Math.max(0.68, Math.min(1.0, viewport.width / 7.65))
   const obj = useLoader(OBJLoader, '/foguete/foguete.obj')
 
   const { model, offset, tailY, mats } = useMemo(() => {
@@ -266,47 +265,62 @@ function RocketModel({ scrollRef }) {
       launchRef.current.startTime = clock.getElapsedTime()
     }
 
+    const startX  =  1.8 * rf
+    const endZ    = -7.0 * rf
+    // Em mobile o foguete começa abaixo do texto e sobe bastante com o scroll
+    // rf=1.0 (desktop) → sem offset, sem subida extra
+    // rf=0.68 (mobile)  → começa -1.8 abaixo, sobe até +4.5 com o scroll
+    const mobileFactor = Math.max(0, (1.0 - rf) / 0.32)   // 0 desktop → 1 mobile
+    const offsetY      = -1.8 * mobileFactor               // posição inicial: abaixo
+
     groupRef.current.rotation.y = -(25 * Math.PI / 180)
-    groupRef.current.rotation.z = -0.10
+    groupRef.current.scale.setScalar(rf)
 
     if (launchRef.current.triggered) {
       // ── Fase 2: lançamento em alta velocidade para o topo ─────────────────
       const elapsed = clock.getElapsedTime() - launchRef.current.startTime
 
-      // Posição de partida (onde a fase 1 parou em TRIGGER_T)
-      const pBase  = Math.min(1, TRIGGER_T / 0.55)
-      const pxBase = lerp(1.8, 0.0, pBase)
-      const pzBase = lerp(0.0, -7.0, pBase)
+      const pBase       = Math.min(1, TRIGGER_T / 0.55)
+      const pxBase      = lerp(startX, 0.0, pBase)
+      const pzBase      = lerp(0.0, endZ, pBase)
+      const scrollUpBase = pBase * 6.5 * mobileFactor
 
-      // Aceleração quadrática para cima — foguete dispara em alta velocidade
-      const py = elapsed * elapsed * 35
+      const py = offsetY + scrollUpBase + elapsed * elapsed * 35
       groupRef.current.position.set(pxBase, py, pzBase)
 
-      // Endereiça o foguete de volta ao vertical conforme sobe
       groupRef.current.rotation.x = lerp(-Math.PI / 4, 0.1, Math.min(1, elapsed * 4))
 
-      // Fade-out rápido
-      const opacity = Math.max(0, 1 - elapsed * 6)
-      matsRef.current.forEach(m => { m.opacity = opacity })
+      matsRef.current.forEach(m => { m.opacity = 1 })
+      fireOpacityRef.current = 1
 
     } else {
       // ── Fase 1: animação dirigida pelo scroll ──────────────────────────────
       const pSmooth = Math.min(1, tSmooth / 0.55)
-      groupRef.current.rotation.x = lerp(0.05, -Math.PI / 4, pSmooth)
+      const t = clock.getElapsedTime()
 
-      const px = lerp(1.8, 0.0, pSmooth)
-      const pz = lerp(0.0, -7.0, pSmooth)
-      groupRef.current.position.set(px, 0.0, pz)
+      const wobbleX  = Math.sin(t * 2.1) * 0.048 + Math.sin(t * 3.7) * 0.018
+      const wobbleY  = Math.cos(t * 1.8) * 0.032 + Math.cos(t * 4.3) * 0.013
+      const wobbleZ  = Math.sin(t * 1.3) * 0.016
+      // Subida com scroll — só no mobile (mobileFactor=0 no desktop)
+      const scrollUpY = pSmooth * 6.5 * mobileFactor
 
-      // Mantém o foguete visível durante toda a fase 1
+      groupRef.current.rotation.x = lerp(0.05, -Math.PI / 4, pSmooth) + wobbleX * 0.15
+      groupRef.current.rotation.z = -0.10 + wobbleZ
+
+      const px = lerp(startX, 0.0, pSmooth) + wobbleX
+      const py = offsetY + scrollUpY + wobbleY
+      const pz = lerp(0.0, endZ, pSmooth)
+      groupRef.current.position.set(px, py, pz)
+
       matsRef.current.forEach(m => { m.opacity = 1 })
+      fireOpacityRef.current = 1
     }
   })
 
   return (
     <group ref={groupRef}>
       <primitive object={model} position={[-offset.x, -offset.y, -offset.z]} />
-      <RocketFire tailY={tailY} scale={0.45} count={160} />
+      <RocketFire tailY={tailY} scale={0.45 * rf} count={160} opacityRef={fireOpacityRef} />
     </group>
   )
 }
@@ -339,15 +353,11 @@ function RocketOverlay({ scrollRef }) {
         camera={{ position: [0, 0, 5], fov: 75 }}
         gl={{ alpha: true, antialias: true }}
       >
-        <ambientLight intensity={0.5} color="#c8d8ff" />
-        {/* Luz principal frontal — ilumina pérola e cromo */}
-        <pointLight position={[-1, 2, 4]} intensity={100} color="#d8eaff" />
-        {/* Glow de propulsor laranja — aquece o motor */}
-        <pointLight position={[0, -2, 1]} intensity={70} color="#ff8820" />
-        {/* Rim light índigo — contrasta o lado escuro */}
-        <pointLight position={[4, 1, -2]} intensity={40} color="#6070ff" />
-        {/* Contraluz ciano — acende os detalhes emissivos */}
-        <pointLight position={[-3, 0, -3]} intensity={20} color="#00e5ff" />
+        <ambientLight intensity={0.4} color="#E0F2FE" />
+        <pointLight position={[-1, 2, 4]}  intensity={100} color="#BAE6FD" />
+        <pointLight position={[0, -2, 1]}  intensity={60}  color="#38BDF8" />
+        <pointLight position={[4, 1, -2]}  intensity={35}  color="#0EA5E9" />
+        <pointLight position={[-3, 0, -3]} intensity={18}  color="#E0F2FE" />
         <Suspense fallback={null}>
           <RocketModel scrollRef={scrollRef} />
         </Suspense>
@@ -388,7 +398,7 @@ export default function Hero({ scrollRef }) {
         {/* Glow de exaustão na base */}
         <div
           className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] pointer-events-none z-[1]"
-          style={{ background: 'radial-gradient(ellipse 60% 80% at 50% 100%, #f9731620, #ea580c0a, transparent)' }}
+          style={{ background: 'radial-gradient(ellipse 60% 80% at 50% 100%, #38BDF820, #0EA5E90a, transparent)' }}
         />
 
         {/* Vignette — janela do cockpit */}
@@ -405,14 +415,14 @@ export default function Hero({ scrollRef }) {
           className="absolute top-20 left-6 md:left-10 space-y-1 select-none z-10 transition-[opacity,transform] duration-100"
           style={fadeStyle}
         >
-          <p className="font-mono text-[9px] text-[#f97316]/50 tracking-[0.2em] uppercase">Propulsão</p>
+          <p className="font-mono text-[9px] text-[#94A3B8]/50 tracking-[0.2em] uppercase">Propulsão</p>
           <div className="flex items-center gap-2">
-            <div className={`w-1.5 h-1.5 rounded-full transition-colors ${launched ? 'bg-[#22d3ee] shadow-[0_0_6px_#22d3ee]' : 'bg-[#f97316] shadow-[0_0_6px_#f97316] animate-pulse'}`} />
-            <span className="font-mono text-[10px] text-[#c8c8e8]/30">
+            <div className={`w-1.5 h-1.5 rounded-full transition-colors ${launched ? 'bg-[#38BDF8] shadow-[0_0_6px_#38BDF8]' : 'bg-[#94A3B8] shadow-[0_0_6px_#94A3B8] animate-pulse'}`} />
+            <span className="font-mono text-[10px] text-[#94A3B8]/70">
               {launched ? 'PROPULSÃO ATIVA' : 'IGNIÇÃO PENDENTE'}
             </span>
           </div>
-          <p className="font-mono text-[9px] text-[#c8c8e8]/20">ALT 408 km · 7.66 km/s</p>
+          <p className="font-mono text-[9px] text-[#94A3B8]/45">ALT 408 km · 7.66 km/s</p>
         </div>
 
         {/* HUD — superior direito */}
@@ -420,9 +430,9 @@ export default function Hero({ scrollRef }) {
           className="absolute top-20 right-6 md:right-10 text-right space-y-1 select-none z-10 transition-[opacity,transform] duration-100"
           style={fadeStyle}
         >
-          <p className="font-mono text-[9px] text-[#22d3ee]/50 tracking-[0.2em] uppercase">Destino</p>
-          <p className="font-mono text-[10px] text-[#c8c8e8]/30">RA 05h 34m · DEC +22°</p>
-          <p className="font-mono text-[9px] text-[#c8c8e8]/20">Nébula do Caranguejo</p>
+          <p className="font-mono text-[9px] text-[#94A3B8]/50 tracking-[0.2em] uppercase">Destino</p>
+          <p className="font-mono text-[10px] text-[#94A3B8]/70">RA 05h 34m · DEC +22°</p>
+          <p className="font-mono text-[9px] text-[#94A3B8]/45">Nébula do Caranguejo</p>
         </div>
 
         {/* Conteúdo central — fica atrás do foguete (z-10 < z-20 do canvas fixo) */}
@@ -431,29 +441,29 @@ export default function Hero({ scrollRef }) {
           style={fadeStyle}
         >
           <div className="flex items-center gap-3">
-            <div className="h-px w-8 bg-gradient-to-r from-transparent to-[#f97316]/60" />
+            <div className="h-px w-8 bg-gradient-to-r from-transparent to-[#94A3B8]/30" />
             <span
               className="font-mono text-[11px] tracking-[0.35em] uppercase"
-              style={{ color: launched ? '#22d3ee' : '#f97316' }}
+              style={{ color: launched ? '#38BDF8' : '#94A3B8' }}
             >
               {launched ? '— Em Órbita —' : `Ignição em T-${count}`}
             </span>
-            <div className="h-px w-8 bg-gradient-to-l from-transparent to-[#f97316]/60" />
+            <div className="h-px w-8 bg-gradient-to-l from-transparent to-[#94A3B8]/30" />
           </div>
 
           <h1
-            className="text-5xl sm:text-7xl md:text-[clamp(4rem,10vw,8rem)] font-bold text-white leading-[0.95] tracking-tight"
+            className="text-5xl sm:text-7xl md:text-[clamp(4rem,10vw,8rem)] font-bold text-[#F8FAFC] leading-[0.95] tracking-tight"
             style={{ fontFamily: "'Oswald', sans-serif" }}
           >
             FÍSICA{' '}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#f97316] via-[#a78bfa] to-[#22d3ee]">
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#38BDF8] to-[#0EA5E9]">
               ALÉM
             </span>
             <br />
             DA SALA DE AULA
           </h1>
 
-          <p className="text-[#c8c8e8]/45 text-sm md:text-base leading-relaxed max-w-lg font-mono">
+          <p className="text-[#94A3B8] text-sm md:text-base leading-relaxed max-w-lg font-mono">
             Uma viagem pelo universo da física — projetos, simulações e materiais
             que transformam o impossível em compreensível.
           </p>
@@ -461,13 +471,13 @@ export default function Hero({ scrollRef }) {
           <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
             <a
               href="#projetos"
-              className="px-8 py-2.5 rounded-full bg-[#f97316] hover:bg-[#ea580c] text-white font-mono text-xs tracking-[0.25em] uppercase transition-all duration-200 hover:shadow-lg hover:shadow-[#f97316]/30"
+              className="px-8 py-2.5 rounded-full bg-[#38BDF8] hover:bg-[#0EA5E9] text-[#03030c] font-mono text-xs tracking-[0.25em] uppercase transition-all duration-200 hover:shadow-lg hover:shadow-[#38BDF8]/30"
             >
               Iniciar Missão
             </a>
             <a
               href="#sobre"
-              className="px-8 py-2.5 rounded-full border border-[#ffffff15] hover:border-[#ffffff35] text-[#c8c8e8]/50 hover:text-white font-mono text-xs tracking-[0.25em] uppercase transition-all duration-200"
+              className="px-8 py-2.5 rounded-full border border-[#38BDF8]/20 hover:border-[#38BDF8]/50 text-[#94A3B8] hover:text-[#F8FAFC] font-mono text-xs tracking-[0.25em] uppercase transition-all duration-200"
             >
               Conhecer Piloto
             </a>
@@ -479,8 +489,8 @@ export default function Hero({ scrollRef }) {
           className="absolute bottom-14 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-10 transition-[opacity,transform] duration-100"
           style={fadeStyle}
         >
-          <span className="font-mono text-[9px] text-[#c8c8e8]/25 tracking-[0.35em] uppercase">Avançar</span>
-          <div className="w-px h-10 bg-gradient-to-b from-[#f97316]/40 to-transparent animate-pulse" />
+          <span className="font-mono text-[9px] text-[#94A3B8]/60 tracking-[0.35em] uppercase">Avançar</span>
+          <div className="w-px h-10 bg-gradient-to-b from-[#94A3B8]/40 to-transparent animate-pulse" />
         </div>
 
         {/* Barra de velocidade lateral */}
@@ -488,9 +498,9 @@ export default function Hero({ scrollRef }) {
           className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 select-none z-10 transition-[opacity,transform] duration-100"
           style={fadeStyle}
         >
-          <span className="font-mono text-[8px] text-[#c8c8e8]/20 tracking-widest [writing-mode:vertical-rl]">VELOCIDADE</span>
-          <div className="w-px h-24 bg-gradient-to-b from-[#f97316]/40 via-[#6c63ff]/30 to-transparent" />
-          <span className="font-mono text-[8px] text-[#f97316]/40">MAX</span>
+          <span className="font-mono text-[8px] text-[#94A3B8]/45 tracking-widest [writing-mode:vertical-rl]">VELOCIDADE</span>
+          <div className="w-px h-24 bg-gradient-to-b from-[#94A3B8]/40 via-[#94A3B8]/20 to-transparent" />
+          <span className="font-mono text-[8px] text-[#94A3B8]/40">MAX</span>
         </div>
       </section>
 

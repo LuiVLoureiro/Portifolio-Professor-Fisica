@@ -81,7 +81,7 @@ const EARTH_TEX_URLS = [
   '/terra/Night_lights_2K.png',
 ]
 
-// Terra 3D com modelo OBJ + texturas reais
+// Terra 3D com modelo OBJ + texturas reais — terminador dia/noite via shader
 function EarthModel() {
   const earthRef  = useRef()
   const cloudsRef = useRef()
@@ -98,6 +98,7 @@ function EarthModel() {
       if (!child.isMesh) return
       if (child.name === 'Earth_Cube.002') {
         earth.geometry = child.geometry
+
         earth.material = new THREE.MeshStandardMaterial({
           map:               diffuse,
           bumpMap:           bump,
@@ -108,6 +109,7 @@ function EarthModel() {
           roughness:         0.85,
           metalness:         0.0,
         })
+
       } else if (child.name === 'Clouds_Cube.000') {
         cloudsMesh.geometry = child.geometry
         cloudsMesh.material = new THREE.MeshStandardMaterial({
