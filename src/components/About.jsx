@@ -7,16 +7,26 @@ import RocketFire from './RocketFire'
 
 // Paleta de cores do foguete OBJ — mesma do Hero
 const ROCKET_PALETTE = {
-  aiStandardSurface1SG: { color: '#5a6898', metalness: 0.65, roughness: 0.35 },
-  aiStandardSurface2SG: { color: '#f97316', metalness: 0.20, roughness: 0.55 },
-  aiStandardSurface3SG: { color: '#e8eaf5', metalness: 0.30, roughness: 0.40 },
-  aiStandardSurface4SG: { color: '#10204a', metalness: 0.55, roughness: 0.40 },
-  aiStandardSurface5SG: { color: '#22d3ee', metalness: 0.15, roughness: 0.25, emissive: '#0a3040', emissiveIntensity: 0.6 },
-  aiStandardSurface6SG: { color: '#a8b8d0', metalness: 0.70, roughness: 0.25 },
-  aiStandardSurface7SG: { color: '#dc2626', metalness: 0.25, roughness: 0.55 },
-  aiStandardSurface8SG: { color: '#f0f4ff', metalness: 0.85, roughness: 0.10 },
-  aiStandardSurface9SG: { color: '#0a0c18', metalness: 0.75, roughness: 0.40 },
-  initialShadingGroup:  { color: '#808898', metalness: 0.45, roughness: 0.50 },
+  // Corpo branco principal (27×) — pérola brilhante com tom azul frio
+  aiStandardSurface3SG: { color: '#d8e8ff', metalness: 0.50, roughness: 0.28 },
+  // Painéis prateados (24×) — prata polida de alta refletividade
+  aiStandardSurface6SG: { color: '#b0c8e8', metalness: 0.88, roughness: 0.14 },
+  // Estrutura azul-escuro (24×) — azul marinho profundo
+  aiStandardSurface4SG: { color: '#0a1a48', metalness: 0.65, roughness: 0.32 },
+  // Secundário azul-índigo (22×) — índigo vibrante
+  aiStandardSurface1SG: { color: '#3858d0', metalness: 0.72, roughness: 0.28 },
+  // Acentos laranja (8×) — laranja quente com glow suave
+  aiStandardSurface2SG: { color: '#ff8820', metalness: 0.12, roughness: 0.42, emissive: '#7a3500', emissiveIntensity: 0.5 },
+  // Detalhes ciano (5×) — ciano elétrico com forte emissive
+  aiStandardSurface5SG: { color: '#00e5ff', metalness: 0.10, roughness: 0.18, emissive: '#004860', emissiveIntensity: 1.0 },
+  // Motor/vermelho (7×) — vermelho vivo com glow de calor
+  aiStandardSurface7SG: { color: '#ff2828', metalness: 0.18, roughness: 0.42, emissive: '#6a0000', emissiveIntensity: 0.6 },
+  // Detalhes cromados (5×) — cromo quase branco, muito metálico
+  aiStandardSurface8SG: { color: '#ecf4ff', metalness: 0.95, roughness: 0.05 },
+  // Exaustão/preto (5×) — preto com reflexo azul profundo
+  aiStandardSurface9SG: { color: '#05080f', metalness: 0.82, roughness: 0.30 },
+  // Fallback
+  initialShadingGroup:  { color: '#6878a8', metalness: 0.52, roughness: 0.45 },
 }
 
 function useReveal(threshold = 0.15, delay = 0) {
@@ -63,58 +73,84 @@ function BackgroundStars() {
   )
 }
 
-// Planeta geométrico — icosaedro com wireframe e núcleo brilhante
-function MathPlanet() {
-  const outerRef  = useRef()
-  const innerRef  = useRef()
-  const coreRef   = useRef()
+// URLs fixas fora do componente para estabilidade de referência
+const EARTH_TEX_URLS = [
+  '/terra/Diffuse_2K.png',
+  '/terra/Bump_2K.png',
+  '/terra/Clouds_2K.png',
+  '/terra/Night_lights_2K.png',
+]
+
+// Terra 3D com modelo OBJ + texturas reais
+function EarthModel() {
+  const earthRef  = useRef()
+  const cloudsRef = useRef()
+
+  const obj = useLoader(OBJLoader, '/terra/earth.obj')
+  const [diffuse, bump, cloudsTex, night] = useLoader(THREE.TextureLoader, EARTH_TEX_URLS)
+
+  const { earth, cloudsMesh, atm, normScale } = useMemo(() => {
+    const earth      = new THREE.Mesh()
+    const cloudsMesh = new THREE.Mesh()
+    const atm        = new THREE.Mesh()
+
+    obj.traverse((child) => {
+      if (!child.isMesh) return
+      if (child.name === 'Earth_Cube.002') {
+        earth.geometry = child.geometry
+        earth.material = new THREE.MeshStandardMaterial({
+          map:               diffuse,
+          bumpMap:           bump,
+          bumpScale:         0.04,
+          emissiveMap:       night,
+          emissive:          new THREE.Color('#ff8833'),
+          emissiveIntensity: 0.5,
+          roughness:         0.85,
+          metalness:         0.0,
+        })
+      } else if (child.name === 'Clouds_Cube.000') {
+        cloudsMesh.geometry = child.geometry
+        cloudsMesh.material = new THREE.MeshStandardMaterial({
+          alphaMap:    cloudsTex,
+          transparent: true,
+          color:       '#ffffff',
+          roughness:   1.0,
+          metalness:   0.0,
+          depthWrite:  false,
+        })
+      } else if (child.name === 'Atmosphere_Cube.001') {
+        atm.geometry = child.geometry
+        atm.material = new THREE.MeshBasicMaterial({
+          color:       '#3366ff',
+          transparent: true,
+          opacity:     0.07,
+          side:        THREE.BackSide,
+        })
+      }
+    })
+
+    earth.geometry.computeBoundingSphere()
+    const radius    = earth.geometry.boundingSphere?.radius ?? 1
+    const normScale = 2.4 / radius
+
+    return { earth, cloudsMesh, atm, normScale }
+  }, [obj, diffuse, bump, cloudsTex, night])
 
   useFrame(({ clock }) => {
     const t = clock.getElapsedTime()
-    if (outerRef.current) {
-      outerRef.current.rotation.y = t * 0.12
-      outerRef.current.rotation.x = t * 0.04
-    }
-    if (innerRef.current) {
-      innerRef.current.rotation.y = -t * 0.08
-      innerRef.current.rotation.z =  t * 0.06
-    }
-    if (coreRef.current) {
-      coreRef.current.rotation.y = t * 0.3
-    }
+    if (earthRef.current)  earthRef.current.rotation.y  = t * 0.06
+    if (cloudsRef.current) cloudsRef.current.rotation.y = t * 0.075
   })
 
   return (
-    <group>
-      {/* Atmosfera externa — transparência suave */}
-      <mesh>
-        <sphereGeometry args={[2.8, 32, 32]} />
-        <meshBasicMaterial color="#6c63ff" transparent opacity={0.04} side={THREE.BackSide} />
-      </mesh>
-
-      {/* Camada externa — icosaedro de alta subdivisão */}
-      <mesh ref={outerRef}>
-        <icosahedronGeometry args={[2.4, 2]} />
-        <meshBasicMaterial color="#6c63ff" wireframe transparent opacity={0.35} />
-      </mesh>
-
-      {/* Camada interna — icosaedro mais simples, rotação inversa */}
-      <mesh ref={innerRef}>
-        <icosahedronGeometry args={[1.6, 1]} />
-        <meshBasicMaterial color="#a78bfa" wireframe transparent opacity={0.55} />
-      </mesh>
-
-      {/* Núcleo — octaedro brilhante no centro */}
-      <mesh ref={coreRef}>
-        <octahedronGeometry args={[0.55, 0]} />
-        <meshBasicMaterial color="#22d3ee" wireframe transparent opacity={0.9} />
-      </mesh>
-
-      {/* Ponto de luz central */}
-      <mesh>
-        <sphereGeometry args={[0.18, 12, 12]} />
-        <meshBasicMaterial color="#ffffff" transparent opacity={0.95} />
-      </mesh>
+    <group scale={normScale}>
+      <group ref={earthRef}>
+        <primitive object={earth} />
+      </group>
+      <group ref={cloudsRef}>
+        <primitive object={cloudsMesh} />
+      </group>
+      <primitive object={atm} />
     </group>
   )
 }
@@ -201,12 +237,12 @@ function MathLabels() {
 }
 
 // Foguete OBJ em órbita real — mesmo canvas do planeta, depth testing automático
-function OrbitingRocket({ scrollRef }) {
+function OrbitingRocket() {
   const orbitRef = useRef()
   const matsRef  = useRef([])
   const obj = useLoader(OBJLoader, '/foguete/foguete.obj')
 
-  const { model, offset } = useMemo(() => {
+  const { model, offset, mats } = useMemo(() => {
     const cloned = obj.clone(true)
 
     cloned.traverse((child) => {
@@ -225,79 +261,101 @@ function OrbitingRocket({ scrollRef }) {
 
     const matCache = {}
     const allMats  = []
+
+    function buildMat(name) {
+      if (matCache[name]) return matCache[name]
+      const def = ROCKET_PALETTE[name] ?? ROCKET_PALETTE.initialShadingGroup
+      const mat = new THREE.MeshStandardMaterial({
+        color:             def.color,
+        metalness:         def.metalness         ?? 0.5,
+        roughness:         def.roughness         ?? 0.4,
+        emissive:          def.emissive          ?? '#000000',
+        emissiveIntensity: def.emissiveIntensity ?? 0,
+        transparent: true, opacity: 0,
+      })
+      matCache[name] = mat
+      allMats.push(mat)
+      return mat
+    }
+
     cloned.traverse((child) => {
       if (!child.isMesh || !child.visible) return
-      const name = child.material?.name ?? 'initialShadingGroup'
-      if (!matCache[name]) {
-        const def = ROCKET_PALETTE[name] ?? ROCKET_PALETTE.initialShadingGroup
-        matCache[name] = new THREE.MeshStandardMaterial({
-          color: def.color, metalness: def.metalness ?? 0.5,
-          roughness: def.roughness ?? 0.4,
-          emissive: def.emissive ?? '#000000',
-          emissiveIntensity: def.emissiveIntensity ?? 0,
-          transparent: true, opacity: 0,
-        })
-        allMats.push(matCache[name])
+      // O OBJLoader cria material como Array quando o mesmo grupo
+      // contém múltiplos usemtl — é preciso tratar os dois casos.
+      if (Array.isArray(child.material)) {
+        child.material = child.material.map(m =>
+          buildMat(m?.name ?? 'initialShadingGroup')
+        )
+      } else {
+        child.material = buildMat(child.material?.name ?? 'initialShadingGroup')
       }
-      child.material = matCache[name]
     })
-    matsRef.current = allMats
-
-    return { model: cloned, offset: center }
+    return { model: cloned, offset: center, mats: allMats }
   }, [obj])
+
+  useEffect(() => { matsRef.current = mats })
+
+  // Vetores reutilizados a cada frame — sem alocações no GC
+  const _nose   = new THREE.Vector3()
+  const _radial = new THREE.Vector3()
+  const _right  = new THREE.Vector3()
+  const _dorsal = new THREE.Vector3()
+  const _mat4   = new THREE.Matrix4()
 
   useFrame(({ clock }) => {
     if (!orbitRef.current) return
-    const t = scrollRef.current
 
-    // Fade-in ao entrar na seção About (t: 0.85 → 1.1)
-    const scrollOpacity = Math.max(0, Math.min(1, (t - 0.85) / 0.25))
-    if (scrollOpacity === 0) {
-      matsRef.current.forEach(m => { m.opacity = 0 })
-      return
-    }
-
-    const ot = clock.getElapsedTime() * 0.22
-    const r  = 4.2
+    // ── Órbita inclinada (~26°) ───────────────────────────────────────────
+    const ot  = clock.getElapsedTime() * 0.7
+    const r   = 4.2
+    const SIN = Math.sin(0.45)
+    const COS = Math.cos(0.45)
 
     const px = Math.cos(ot) * r
-    const py = Math.sin(ot * 0.4) * 0.9
-    const pz = Math.sin(ot) * r
-
+    const py = Math.sin(ot) * r * SIN
+    const pz = Math.sin(ot) * r * COS
     orbitRef.current.position.set(px, py, pz)
-    orbitRef.current.rotation.y = Math.atan2(-Math.sin(ot), Math.cos(ot))
-    orbitRef.current.rotation.z = Math.PI / 2
-    orbitRef.current.rotation.x = 0
 
-    // ── Oclusão pelo planeta ──────────────────────────────────────────────
-    // A câmera está em z=9 olhando para z=0 (origem = centro do planeta).
-    // Quando pz > 0 o foguete está entre a câmera e o planeta → visível.
-    // Quando pz < 0 o foguete está no lado oposto → atrás do planeta.
-    // Transição suave de pz=0 (lateral) até pz=-PLANET_R (totalmente atrás).
+    // ── Orientação: nariz aponta na direção da velocidade ─────────────────
+    _nose.set(-Math.sin(ot), Math.cos(ot) * SIN, Math.cos(ot) * COS).normalize()
+    _radial.set(px, py, pz).normalize()
+    _right.crossVectors(_nose, _radial).normalize()
+    _dorsal.crossVectors(_right, _nose).normalize()
+    _mat4.makeBasis(_right, _nose, _dorsal)
+    orbitRef.current.setRotationFromMatrix(_mat4)
+
+    // ── Oclusão: foguete some quando passa atrás da Terra ────────────────
     const PLANET_R = 2.4
     const behind = Math.max(0, Math.min(1, -pz / PLANET_R))
-    matsRef.current.forEach(m => { m.opacity = scrollOpacity * (1 - behind) })
+    matsRef.current.forEach(m => { m.opacity = 1 - behind })
   })
 
   return (
     <group ref={orbitRef} scale={0.42}>
       <primitive object={model} position={[-offset.x, -offset.y, -offset.z]} />
-      {/* tailY=-0.5 = metade inferior do foguete normalizado em 1u (pre-scale) */}
-      <RocketFire tailY={-0.5} scale={0.45} count={160} scrollRef={scrollRef} />
+      <RocketFire tailY={-0.5} scale={0.25} count={80} />
     </group>
   )
 }
 
-function PlanetScene({ scrollRef }) {
+function PlanetScene() {
   return (
     <>
       {/* Luzes para o MeshStandardMaterial do foguete */}
-      <ambientLight intensity={0.5} color="#dde8ff" />
-      <pointLight position={[6, 6, 6]}   intensity={60} color="#c8d8ff" />
-      <pointLight position={[-5, -3, -5]} intensity={20} color="#a78bfa" />
+      <ambientLight intensity={0.55} color="#c8d8ff" />
+      {/* Luz principal — ilumina corpo pérola e cromo */}
+      <pointLight position={[6, 6, 6]}   intensity={80} color="#d8eaff" />
+      {/* Rim light índigo — contrasta estrutura azul-marinho */}
+      <pointLight position={[-5, -3, -5]} intensity={30} color="#6070ff" />
+      {/* Glow laranja — aquece propulsor e acentos */}
+      <pointLight position={[0, -5, 3]}   intensity={40} color="#ff8820" />
+      {/* Contraluz ciano — acende detalhes emissivos */}
+      <pointLight position={[-4, 2, -4]}  intensity={18} color="#00e5ff" />
 
       <BackgroundStars />
-      <MathPlanet />
+      <Suspense fallback={null}>
+        <EarthModel />
+      </Suspense>
       <OrbitalRing radius={3.2} tilt={0.3} speed={0.20} color="#6c63ff" opacity={0.35} />
       <OrbitalRing radius={3.8} tilt={1.1} speed={-0.14} color="#22d3ee" opacity={0.25} />
       <OrbitalRing radius={4.5} tilt={1.8} speed={0.09} color="#a78bfa" opacity={0.18} />
@@ -306,7 +364,7 @@ function PlanetScene({ scrollRef }) {
       <OrbitalParticles radius={4.5} count={28}  color="#a78bfa" tilt={1.8}  speed={0.09} />
       <MathLabels />
       <Suspense fallback={null}>
-        <OrbitingRocket scrollRef={scrollRef} />
+        <OrbitingRocket />
       </Suspense>
     </>
   )
@@ -390,9 +448,28 @@ export default function About({ scrollRef }) {
   const [refHeading, styleHeading] = useReveal(0.2, 0)
   const [refQuote, styleQuote]     = useReveal(0.2, 0)
   const [refStats, styleStats]     = useReveal(0.2, 100)
+  const sectionRef = useRef()
+
+  // Fade-in sincronizado com o fim do hero (t 0.70 → 1.0)
+  // Mutação direta no DOM — sem estado React, sem re-render
+  useEffect(() => {
+    let rafId
+    const update = () => {
+      if (sectionRef.current) {
+        const t = scrollRef.current
+        const progress = Math.max(0, Math.min(1, (t - 0.45) / 0.55))
+        sectionRef.current.style.opacity = progress
+      }
+      rafId = requestAnimationFrame(update)
+    }
+    rafId = requestAnimationFrame(update)
+    return () => cancelAnimationFrame(rafId)
+  }, [scrollRef])
 
   return (
-    <section id="sobre" className="relative bg-[#04040f] overflow-hidden">
+    <section ref={sectionRef} id="sobre"
+      className="relative bg-[#04040f] overflow-hidden"
+      style={{ opacity: 0 }}>
 
       {/* Separador superior */}
       <div className="absolute top-0 left-0 w-full h-px"
@@ -401,7 +478,7 @@ export default function About({ scrollRef }) {
       {/* ── Canvas Three.js — Planeta da Matemática ─────────────────────── */}
       <div className="relative w-full h-[65vh] min-h-[480px]">
         <Canvas camera={{ position: [0, 1.5, 9], fov: 52 }}>
-          <PlanetScene scrollRef={scrollRef} />
+          <PlanetScene />
         </Canvas>
 
         {/* Fade inferior — funde com o conteúdo abaixo */}

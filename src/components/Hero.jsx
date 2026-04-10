@@ -138,16 +138,26 @@ function BackgroundScene() {
 //   9SG (5×)  exaustão/preto         |  8SG/5SG   detalhes cromados/ciano
 //
 const ROCKET_PALETTE = {
-  aiStandardSurface1SG: { color: '#5a6898', metalness: 0.65, roughness: 0.35 },
-  aiStandardSurface2SG: { color: '#f97316', metalness: 0.20, roughness: 0.55 },
-  aiStandardSurface3SG: { color: '#e8eaf5', metalness: 0.30, roughness: 0.40 },
-  aiStandardSurface4SG: { color: '#10204a', metalness: 0.55, roughness: 0.40 },
-  aiStandardSurface5SG: { color: '#22d3ee', metalness: 0.15, roughness: 0.25, emissive: '#0a3040', emissiveIntensity: 0.6 },
-  aiStandardSurface6SG: { color: '#a8b8d0', metalness: 0.70, roughness: 0.25 },
-  aiStandardSurface7SG: { color: '#dc2626', metalness: 0.25, roughness: 0.55 },
-  aiStandardSurface8SG: { color: '#f0f4ff', metalness: 0.85, roughness: 0.10 },
-  aiStandardSurface9SG: { color: '#0a0c18', metalness: 0.75, roughness: 0.40 },
-  initialShadingGroup:  { color: '#808898', metalness: 0.45, roughness: 0.50 },
+  // Corpo branco principal (27×) — pérola brilhante com tom azul frio
+  aiStandardSurface3SG: { color: '#d8e8ff', metalness: 0.50, roughness: 0.28 },
+  // Painéis prateados (24×) — prata polida de alta refletividade
+  aiStandardSurface6SG: { color: '#b0c8e8', metalness: 0.88, roughness: 0.14 },
+  // Estrutura azul-escuro (24×) — azul marinho profundo
+  aiStandardSurface4SG: { color: '#0a1a48', metalness: 0.65, roughness: 0.32 },
+  // Secundário azul-índigo (22×) — índigo vibrante
+  aiStandardSurface1SG: { color: '#3858d0', metalness: 0.72, roughness: 0.28 },
+  // Acentos laranja (8×) — laranja quente com glow suave
+  aiStandardSurface2SG: { color: '#ff8820', metalness: 0.12, roughness: 0.42, emissive: '#7a3500', emissiveIntensity: 0.5 },
+  // Detalhes ciano (5×) — ciano elétrico com forte emissive
+  aiStandardSurface5SG: { color: '#00e5ff', metalness: 0.10, roughness: 0.18, emissive: '#004860', emissiveIntensity: 1.0 },
+  // Motor/vermelho (7×) — vermelho vivo com glow de calor
+  aiStandardSurface7SG: { color: '#ff2828', metalness: 0.18, roughness: 0.42, emissive: '#6a0000', emissiveIntensity: 0.6 },
+  // Detalhes cromados (5×) — cromo quase branco, muito metálico
+  aiStandardSurface8SG: { color: '#ecf4ff', metalness: 0.95, roughness: 0.05 },
+  // Exaustão/preto (5×) — preto com reflexo azul profundo
+  aiStandardSurface9SG: { color: '#05080f', metalness: 0.82, roughness: 0.30 },
+  // Fallback
+  initialShadingGroup:  { color: '#6878a8', metalness: 0.52, roughness: 0.45 },
 }
 
 // ── Modelo 3D do foguete ──────────────────────────────────────────────────────
@@ -161,12 +171,13 @@ const ROCKET_PALETTE = {
 //  t = 2.10 → foguete some — a jornada começou
 //
 function RocketModel({ scrollRef }) {
-  const groupRef = useRef()
-  const matsRef  = useRef([])
-  const spinRef  = useRef(0)
+  const groupRef   = useRef()
+  const matsRef    = useRef([])
+  const smoothTRef = useRef(0)
+  const launchRef  = useRef({ triggered: false, startTime: 0 })
   const obj = useLoader(OBJLoader, '/foguete/foguete.obj')
 
-  const { model, offset } = useMemo(() => {
+  const { model, offset, tailY, mats } = useMemo(() => {
     const cloned = obj.clone(true)
 
     // Remove plano de lançamento (distorce o bounding box)
@@ -187,62 +198,115 @@ function RocketModel({ scrollRef }) {
 
     const center = box.getCenter(new THREE.Vector3()).multiplyScalar(scale)
 
+    // Cauda real = borda inferior do bounding box após centralização
+    // tailY = box.min.y * scale - center.y = scale * (box.min.y - center_original.y)
+    //       = -(scale * size.y / 2)
+    const tailY = -(scale * size.y / 2)
+
     // Um material por nome único — reutilizado entre meshes do mesmo grupo
     const matCache = {}
     const allMats  = []
 
+    function buildMat(name) {
+      if (matCache[name]) return matCache[name]
+      const def = ROCKET_PALETTE[name] ?? ROCKET_PALETTE.initialShadingGroup
+      const mat = new THREE.MeshStandardMaterial({
+        color:             def.color,
+        metalness:         def.metalness         ?? 0.5,
+        roughness:         def.roughness         ?? 0.4,
+        emissive:          def.emissive          ?? '#000000',
+        emissiveIntensity: def.emissiveIntensity ?? 0,
+        transparent: true,
+        opacity: 1,
+      })
+      matCache[name] = mat
+      allMats.push(mat)
+      return mat
+    }
+
     cloned.traverse((child) => {
       if (!child.isMesh || !child.visible) return
 
-      const name = child.material?.name ?? 'initialShadingGroup'
-      if (!matCache[name]) {
-        const def = ROCKET_PALETTE[name] ?? ROCKET_PALETTE.initialShadingGroup
-        const mat = new THREE.MeshStandardMaterial({
-          color:             def.color,
-          metalness:         def.metalness  ?? 0.5,
-          roughness:         def.roughness  ?? 0.4,
-          emissive:          def.emissive   ?? '#000000',
-          emissiveIntensity: def.emissiveIntensity ?? 0,
-          transparent: true,
-          opacity: 1,
-        })
-        matCache[name] = mat
-        allMats.push(mat)
+      // O OBJLoader cria material como Array quando o mesmo grupo
+      // contém múltiplos usemtl — é preciso tratar os dois casos.
+      if (Array.isArray(child.material)) {
+        child.material = child.material.map(m =>
+          buildMat(m?.name ?? 'initialShadingGroup')
+        )
+      } else {
+        child.material = buildMat(child.material?.name ?? 'initialShadingGroup')
       }
-      child.material  = matCache[name]
       child.castShadow = true
     })
 
-    matsRef.current = allMats
-
-    return { model: cloned, offset: center }
+    return { model: cloned, offset: center, tailY, mats: allMats }
   }, [obj])
 
-  useFrame(() => {
+  useEffect(() => { matsRef.current = mats })
+
+  useFrame(({ clock }, delta) => {
     if (!groupRef.current) return
-    const t = scrollRef.current
 
-    // Giro lento acumulado
-    spinRef.current += 0.003
-    groupRef.current.rotation.y = spinRef.current
-    groupRef.current.rotation.z = remap(t, 0, 1.0, -0.15, -1.35)
-    groupRef.current.rotation.x = remap(t, 0, 1.0,  0.10,  0.35)
+    const tDirect = scrollRef.current
+    const lerpFactor = Math.min(1, 10 * delta)
+    smoothTRef.current = lerp(smoothTRef.current, tDirect, lerpFactor)
+    const tSmooth = smoothTRef.current
 
-    // Trajetória: direita → centro → sai pelo topo
-    const px = t < 0.55
-      ? remap(t, 0,    0.55, 2.0, 0.5)
-      : remap(t, 0.55, 1.1,  0.5, 0.0)
-    const py = remap(t, 0, 1.1, -0.3, 0.5)
-    groupRef.current.position.set(px, py, 0)
+    // Reset phase 2 se o usuário rolar de volta ao topo
+    if (tSmooth < 0.05 && launchRef.current.triggered) {
+      launchRef.current.triggered = false
+      launchRef.current.startTime = 0
+    }
 
-    // Fade-out ao passar o hero: o About canvas assume
-    const opacity = Math.max(0, 1 - remap(t, 0.85, 1.1, 0, 1))
-    matsRef.current.forEach(m => { m.opacity = opacity })
+    // Threshold: dispara o lançamento quando o foguete chegou ao tamanho mínimo
+    const TRIGGER_T = 0.22
+
+    if (!launchRef.current.triggered && tSmooth >= TRIGGER_T) {
+      launchRef.current.triggered = true
+      launchRef.current.startTime = clock.getElapsedTime()
+    }
+
+    groupRef.current.rotation.y = -(25 * Math.PI / 180)
+    groupRef.current.rotation.z = -0.10
+
+    if (launchRef.current.triggered) {
+      // ── Fase 2: lançamento em alta velocidade para o topo ─────────────────
+      const elapsed = clock.getElapsedTime() - launchRef.current.startTime
+
+      // Posição de partida (onde a fase 1 parou em TRIGGER_T)
+      const pBase  = Math.min(1, TRIGGER_T / 0.55)
+      const pxBase = lerp(1.8, 0.0, pBase)
+      const pzBase = lerp(0.0, -7.0, pBase)
+
+      // Aceleração quadrática para cima — foguete dispara em alta velocidade
+      const py = elapsed * elapsed * 35
+      groupRef.current.position.set(pxBase, py, pzBase)
+
+      // Endereiça o foguete de volta ao vertical conforme sobe
+      groupRef.current.rotation.x = lerp(-Math.PI / 4, 0.1, Math.min(1, elapsed * 4))
+
+      // Fade-out rápido
+      const opacity = Math.max(0, 1 - elapsed * 6)
+      matsRef.current.forEach(m => { m.opacity = opacity })
+
+    } else {
+      // ── Fase 1: animação dirigida pelo scroll ──────────────────────────────
+      const pSmooth = Math.min(1, tSmooth / 0.55)
+      groupRef.current.rotation.x = lerp(0.05, -Math.PI / 4, pSmooth)
+
+      const px = lerp(1.8, 0.0, pSmooth)
+      const pz = lerp(0.0, -7.0, pSmooth)
+      groupRef.current.position.set(px, 0.0, pz)
+
+      // Mantém o foguete visível durante toda a fase 1
+      matsRef.current.forEach(m => { m.opacity = 1 })
+    }
   })
 
   return (
     <group ref={groupRef}>
       <primitive object={model} position={[-offset.x, -offset.y, -offset.z]} />
+      <RocketFire tailY={tailY} scale={0.45} count={160} />
     </group>
   )
 }
@@ -250,22 +314,40 @@ function RocketModel({ scrollRef }) {
 // ── Canvas fixo do foguete — sobrepõe todas as seções ────────────────────────
 
 function RocketOverlay({ scrollRef }) {
+  const [hidden, setHidden] = useState(false)
+
+  useEffect(() => {
+    // Polling via RAF — Lenis não dispara scroll nativo
+    let prev = false
+    let rafId
+    const poll = () => {
+      // Hero tem exatamente h-screen → some quando t >= 1.0
+      const nowHidden = scrollRef.current >= 1.0
+      if (nowHidden !== prev) { prev = nowHidden; setHidden(nowHidden) }
+      rafId = requestAnimationFrame(poll)
+    }
+    rafId = requestAnimationFrame(poll)
+    return () => cancelAnimationFrame(rafId)
+  }, [scrollRef])
+
   return (
     <div
       className="fixed inset-0 pointer-events-none"
-      style={{ zIndex: 20 }}
+      style={{ zIndex: 20, display: hidden ? 'none' : 'block' }}
     >
       <Canvas
         camera={{ position: [0, 0, 5], fov: 75 }}
         gl={{ alpha: true, antialias: true }}
       >
-        <ambientLight intensity={0.4} color="#dde8ff" />
-        {/* Luz principal lateral */}
-        <pointLight position={[-1, 2, 4]} intensity={80} color="#c8d8ff" />
-        {/* Glow de propulsor laranja */}
-        <pointLight position={[0, -2, 1]} intensity={55} color="#f97316" />
-        {/* Rim light roxa */}
-        <pointLight position={[4, 1, -2]} intensity={25} color="#a78bfa" />
+        <ambientLight intensity={0.5} color="#c8d8ff" />
+        {/* Luz principal frontal — ilumina pérola e cromo */}
+        <pointLight position={[-1, 2, 4]} intensity={100} color="#d8eaff" />
+        {/* Glow de propulsor laranja — aquece o motor */}
+        <pointLight position={[0, -2, 1]} intensity={70} color="#ff8820" />
+        {/* Rim light índigo — contrasta o lado escuro */}
+        <pointLight position={[4, 1, -2]} intensity={40} color="#6070ff" />
+        {/* Contraluz ciano — acende os detalhes emissivos */}
+        <pointLight position={[-3, 0, -3]} intensity={20} color="#00e5ff" />
         <Suspense fallback={null}>
           <RocketModel scrollRef={scrollRef} />
         </Suspense>
@@ -278,13 +360,12 @@ function RocketOverlay({ scrollRef }) {
 
 function useCountdown(from = 5) {
   const [count, setCount] = useState(from)
-  const [launched, setLaunched] = useState(false)
   useEffect(() => {
-    if (count <= 0) { setLaunched(true); return }
+    if (count <= 0) return
     const t = setTimeout(() => setCount(c => c - 1), 1000)
     return () => clearTimeout(t)
   }, [count])
-  return { count, launched }
+  return { count, launched: count <= 0 }
 }
 
 // ── Hero ──────────────────────────────────────────────────────────────────────
